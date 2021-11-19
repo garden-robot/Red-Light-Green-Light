@@ -26,21 +26,30 @@ enum gameStates {
 };
 byte mode = READY; //start here
 
+byte clicks;
 
 
+bool isRippling;
 
 bool isMiddleLight = false; //debug
 bool isGreenLight = false;  //debug
+bool doesMultiClickStartOnRed;
 
 bool roundOver = false;
 
 
-#define RED_INTERVAL_MAX 2000
-#define RED_INTERVAL_MIN 500
+#define RED_INTERVAL_MAX 4000
+#define RED_INTERVAL_MIN 2000
 
-#define GREEN_INTERVAL_MAX 2000
-#define GREEN_INTERVAL_MIN 500
+
+#define GREEN_INTERVAL_MAX 4000
+#define GREEN_INTERVAL_MIN 2000
+
+
 Timer lightTimer;
+
+Timer ripplingTimer;
+#define RIPPLING_INTERVAL 1000
 
 
 void setup() {
@@ -49,7 +58,7 @@ void setup() {
 
 
 void loop() {
-  
+
 
   switch ( mode ) {
     case READY:
@@ -57,21 +66,22 @@ void loop() {
       break;
 
     case REDLIGHT:
-    setValueSentOnAllFaces(mode);
-    redLightLoop();
+      setValueSentOnAllFaces(mode);
+      redLightLoop();
       break;
 
     case GREENLIGHT:
       setValueSentOnAllFaces(mode);
-    greenLightLoop();
+
+      greenLightLoop();
       break;
 
     case LOSE_POINTS:
-    losePointsLoop();
+      losePointsLoop();
       break;
 
     case GAIN_POINTS:
-    gainPointsLoop();
+      gainPointsLoop();
       break;
 
     case WINNER:
@@ -112,142 +122,161 @@ void readyLoop() {
       }
     }
   }
-  
+
 
 }
 
 void redLightLoop() {
-  if(roundOver == true && isGreenLight == false){ //roundOver is the "timer switch".
-    lightTimer.set(RED_INTERVAL_MAX);
+  if (roundOver == true && isGreenLight == false) { //roundOver is the "timer switch".
+    lightTimer.set(RED_INTERVAL_MIN + random(RED_INTERVAL_MAX));
     roundOver = false;
   }
   setColor(RED);
-  if(lightTimer.isExpired()){
+  if (lightTimer.isExpired()) {
     roundOver = true;
     isGreenLight = true;
     mode = GREENLIGHT;
   }
 }
 
-void greenLightLoop(){
-  if(roundOver == true && isGreenLight == true){
-    lightTimer.set(GREEN_INTERVAL_MAX);
+void greenLightLoop() {
+  if (roundOver == true && isGreenLight == true) {
+    lightTimer.set(GREEN_INTERVAL_MIN + random(GREEN_INTERVAL_MAX));
     roundOver = false;
   }
-    setColor(GREEN);
-   if(lightTimer.isExpired()){
+  setColor(GREEN);
+  if (lightTimer.getRemaining() > 0 && lightTimer.getRemaining() < 300) {
+    ripplingTimer.set(RIPPLING_INTERVAL);
+  }
+
+  if (ripplingTimer.isExpired()) {
+
+  }
+  else {
+    FOREACH_FACE(f) {
+      setColorOnFace(makeColorHSB(70, 255, random(50) + 205), f); //GREEN HUE
+    }
+  }
+
+
+  if (lightTimer.isExpired()) {
     roundOver = true;
     isGreenLight = false;
     mode = REDLIGHT;
-  } 
+  }
 }
 
-void losePointsLoop(){
+void losePointsLoop() {
+
+  if (buttonSingleClicked())
+  {
+    teamScores[teamIndex] = 0; //add multi-clicks to array of scores that align with team colours
+  }
+
+  if (buttonDoubleClicked()) {
+    teamScores[teamIndex] = 0;
+  }
 
 
-if (buttonMultiClicked())
-{
-  teamScores[teamIndex] = 0; //add multi-clicks to array of scores that align with team colours
-}
+  if (buttonDown()) {
+    teamScores[teamIndex] = 0;
+  }
 
-if (buttonSingleClicked())
-{
-  teamScores[teamIndex] = 0; //add multi-clicks to array of scores that align with team colours
-}
+  if(buttonReleased()){
+       teamScores[teamIndex] = 0;
+    }
 
-if (buttonDoubleClicked()){
-  teamScores[teamIndex] = 0;
-}
-if (buttonDoubleClicked()){
-  teamScores[teamIndex] = 0;
-}
+  if (teamScores[teamIndex] < 0) { //if value drops below 0 just round it to 0, just in case
+    teamScores[teamIndex] = 0;
+  }
+
+ 
 
 
-if (buttonDown()){
-  teamScores[teamIndex] = 0;
-}
 
-
-if(teamScores[teamIndex] < 0){ //if value drops below 0 just round it to 0, just in case
-  teamScores[teamIndex] = 0;
-}
- scoreDisplay();
-
-    FOREACH_FACE( f ) {
+  FOREACH_FACE( f ) {
     if ( !isValueReceivedOnFaceExpired( f ) ) {
       byte neighbor = getLastValueReceivedOnFace( f );
       bool didNeighborJustChange = didValueOnFaceChange( f );
       if (neighbor == GREENLIGHT && didNeighborJustChange) { //if there is a green light neighbor
-         mode = GAIN_POINTS; //change mode
+        mode = GAIN_POINTS; //change mode
       }
     }
   }
+
+  scoreDisplay();
+
 }
 
-void gainPointsLoop(){
-   byte clicks;
-if (buttonMultiClicked())
-{
-  clicks = buttonClickCount();
-   teamScores[teamIndex] += clicks;
-}
 
- scoreDisplay();
 
-    FOREACH_FACE( f ) {
+void gainPointsLoop() {
+  
+  FOREACH_FACE( f ) {
     if ( !isValueReceivedOnFaceExpired( f ) ) {
       byte neighbor = getLastValueReceivedOnFace( f );
-       bool didNeighborJustChange = didValueOnFaceChange( f );
+      bool didNeighborJustChange = didValueOnFaceChange( f );
       if (neighbor == REDLIGHT && didNeighborJustChange) { //if there is a red light neighbor
-         mode = LOSE_POINTS; //change mode
+        mode = LOSE_POINTS; //change mode
       }
     }
   }
+
+
+  if(buttonReleased()){
+       teamScores[teamIndex] += 1;
+    }
+      
+
+
+
+  scoreDisplay();
+
 }
 
 
-void scoreDisplay(){
-  
-  if(teamScores[teamIndex] > 10){
-  setColorOnFace(WHITE, 0);
-}
+void scoreDisplay() {
 
-else{
-  setColorOnFace(getColorForTeam(teamIndex), 0);
-}
-if(teamScores[teamIndex] > 20){
-  setColorOnFace(WHITE, 1);
-}
-else{
-  setColorOnFace(getColorForTeam(teamIndex), 1);
-}
+  if (teamScores[teamIndex] > 10) {
+    setColorOnFace(WHITE, 0);
+  }
 
-if(teamScores[teamIndex] > 30){
-  setColorOnFace(WHITE, 2);
-}
-else{
-  setColorOnFace(getColorForTeam(teamIndex), 2);
-}
+  else {
+    setColorOnFace(getColorForTeam(teamIndex), 0);
+  }
+  if (teamScores[teamIndex] > 20) {
+    setColorOnFace(WHITE, 1);
+  }
+  else {
+    setColorOnFace(getColorForTeam(teamIndex), 1);
+  }
 
-if(teamScores[teamIndex] > 40){
-  setColorOnFace(WHITE, 3);
-}
-else{
-  setColorOnFace(getColorForTeam(teamIndex), 3);
-}
+  if (teamScores[teamIndex] > 30) {
+    setColorOnFace(WHITE, 2);
+  }
+  else {
+    setColorOnFace(getColorForTeam(teamIndex), 2);
+  }
 
-if(teamScores[teamIndex] > 50){
-  setColorOnFace(WHITE, 4);
-}
-else{
-  setColorOnFace(getColorForTeam(teamIndex), 4);
-}
-if(teamScores[teamIndex] > 60){
-  setColorOnFace(WHITE, 5);
-}
-else{
-  setColorOnFace(getColorForTeam(teamIndex), 5);
-}
+  if (teamScores[teamIndex] > 40) {
+    setColorOnFace(WHITE, 3);
+  }
+  else {
+    setColorOnFace(getColorForTeam(teamIndex), 3);
+  }
+
+  if (teamScores[teamIndex] > 50) {
+    setColorOnFace(WHITE, 4);
+  }
+  else {
+    setColorOnFace(getColorForTeam(teamIndex), 4);
+  }
+  if (teamScores[teamIndex] > 60) {
+    setColorOnFace(WHITE, 5);
+  }
+  else {
+    setColorOnFace(getColorForTeam(teamIndex), 5);
+  }
 
 }
 
@@ -256,13 +285,13 @@ else{
 
 
 
-  //case: GAIN_POINTS: , checks neighbors for GREENLIGHT, counts a multi-click and adds to score
-  //also checks neighbors for REDLIGHT, and changes to LOSE_POINTS if it finds one
+//case: GAIN_POINTS: , checks neighbors for GREENLIGHT, counts a multi-click and adds to score
+//also checks neighbors for REDLIGHT, and changes to LOSE_POINTS if it finds one
 
-  //case: LOSE_POINTS: checks neighbors for REDLIGHT, checks for clicks and will either half score or delete score
-  //also checks neighbors for GREENLIGHT, and changes to GAIN_POINTS if it finds one
+//case: LOSE_POINTS: checks neighbors for REDLIGHT, checks for clicks and will either half score or delete score
+//also checks neighbors for GREENLIGHT, and changes to GAIN_POINTS if it finds one
 
-  //case: WINNER: checks all scores of blinks, finds highest, and will show winning animation
+//case: WINNER: checks all scores of blinks, finds highest, and will show winning animation
 
 
 
