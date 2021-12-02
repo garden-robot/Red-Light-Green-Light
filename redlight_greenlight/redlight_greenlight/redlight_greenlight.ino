@@ -1,55 +1,61 @@
-//RED LIGHT, GREEN LIGHT
+//RED LIGHT, GREEN LIGHT!
+//FUTURE IDEA, Maybe: Co-op! all players must reach 60 points to win. if one person clicks on red, everyone loses their points.
+
+
 //How to play:
-//Each player claims a Blink on the outer ring. double click to choose team colour. The middle Blink is unclaimed.
-//The middle Blink will switch between 2 states- RED and GREEN.
+//Each player (up to 6) claims a Blink on the outer ring. Double click to choose team colour. The middle Blink is unclaimed- it is the light.
+//Long press the middle blink to begin
+
+//The middle Blink will switch between 2 states at random- RED and GREEN.
 //When the middle blink is Green, every player must spam click their blink as many times as they can. 1 click = 1 point.
-//When the middle blink turns Red, every player must stop clicking.
-//Clicking a blink while the middle blink is red will delete all your poitns or halve them each time the player clicks
-//The winner has the most points after x amount of time/rounds
+//When the middle blink turns Red, every player must stop clicking, or they will lose all of their points.
+//The winner reaches 60 points first. Ties are possible.
 
-//Test: the middle blink will flicker slightly- giving a small warning before it turns red.
-//Test: There is no warning for when the middle blink turns from red to green.
-
+//TIP: the middle blink will flicker slightly- giving a very short warning before it turns red.
+//TIP: There is no warning for when the middle blink turns from red to green, so stay alert!
 
 
+//TEAM AND SCORES
 byte teamHues[6] = {22, 49, 82, 99, 160, 200}; //team colours
 byte teamScores[6] = {0, 0, 0, 0, 0, 0}; //scores, also uses teamIndex to line up with team hues
 byte teamIndex = 0;
 
+//GAME STATES
 enum gameStates {
   READY, //waiting for game to start, set teams
-  REDLIGHT, //Center light, red
-  GREENLIGHT, //Center light, green
+  REDLIGHT, //Middle blink, red state. Any neighbor will lose points if clicked
+  GREENLIGHT, //Middle blink, green state. Any neighbor will gain points if clicked
   GAIN_POINTS,  //player piece, able to gain points when greenlight
   LOSE_POINTS, //player piece, loses half of total points when redlight
-  WINNER //player piece, displays win
+  WINNER, //player piece, displays win
+  LOSER //player piece, displays loss
 };
-byte mode = READY; //start here
-
-byte clicks;
+byte mode = READY; //start at this mode
 
 
-bool isRippling;
+bool isRippling; //flag to check if the middle blink is about to change. used for a display function that ripples .3 seconds before switching to red. used as a display warning
+bool isMiddleLight = false; //Check if blink is the middle
+bool isGreenLight = false;  //check if light is green or red
+bool roundOver = false; //checks if the light changes in order to set timers
 
-bool isMiddleLight = false; //debug
-bool isGreenLight = false;  //debug
-bool doesMultiClickStartOnRed;
 
-bool roundOver = false;
-
+//MIDDLE BLINK / REDLIGHT GREENLIGHT INTERVALS
 
 #define RED_INTERVAL_MAX 4000
 #define RED_INTERVAL_MIN 2000
 
-
 #define GREEN_INTERVAL_MAX 4000
 #define GREEN_INTERVAL_MIN 2000
 
+#define RIPPLING_INTERVAL 300
 
-Timer lightTimer;
+//Timers
+Timer lightTimer; //Timer for how long the middle blink is red or green. Is randomized between a min and max range.
+Timer ripplingTimer; //Timer for how long middle blink ripples before changing to red
 
-Timer ripplingTimer;
-#define RIPPLING_INTERVAL 1000
+
+//Winning and Losing Animations
+const byte ROTATION_MS_PER_STEP = 50; //Winning blink displays a rotating pip, all others turn off.
 
 
 void setup() {
@@ -58,9 +64,9 @@ void setup() {
 
 
 void loop() {
-
-
-  switch ( mode ) {
+  
+  switch ( mode )  {
+    
     case READY:
       readyLoop();
       break;
@@ -72,7 +78,6 @@ void loop() {
 
     case GREENLIGHT:
       setValueSentOnAllFaces(mode);
-
       greenLightLoop();
       break;
 
@@ -85,11 +90,15 @@ void loop() {
       break;
 
     case WINNER:
+      setValueSentOnAllFaces(mode);
+      winnerLoop();
       break;
 
+    case LOSER:
+      setValueSentOnAllFaces(mode);
+      loserLoop();
+      break;
   }
-
-
 }
 
 
@@ -101,19 +110,19 @@ void readyLoop() {
   if (buttonDoubleClicked()) { //Change Teams
     teamIndex++;
     setColor(getColorForTeam(teamIndex)); //Set Team
-    if (teamIndex >= COUNT_OF(teamHues)) {
+    if (teamIndex > COUNT_OF(teamHues)) { //if reaching the end, reset to beginning of team hues array
       teamIndex = 0;
     }
   }
 
-  if ( buttonLongPressed() ) { //long press middle blink to set to light and START GAME
-    mode = REDLIGHT;
+  if ( buttonLongPressed() ) { //long press middle blink to set it to the middle light and START GAME
+    mode = REDLIGHT; //start at red light
     roundOver = true;
     isGreenLight = false;
-    isMiddleLight = true; //debug
+    isMiddleLight = true; 
   }
 
-  FOREACH_FACE( f ) { //checks neighbors for REDLIGHT because the game starts on it. will change to LOSE_POINTS mode if it finds a red light neighbor
+  FOREACH_FACE( f ) { //checks neighbors for REDLIGHT because the game starts on it. will change neighbors to LOSE_POINTS mode.
     if ( !isValueReceivedOnFaceExpired( f ) ) {
       byte neighbor = getLastValueReceivedOnFace( f );
       bool didNeighborJustChange = didValueOnFaceChange( f );
@@ -122,51 +131,45 @@ void readyLoop() {
       }
     }
   }
-
-
 }
 
-void redLightLoop() {
-  if (roundOver == true && isGreenLight == false) { //roundOver is the "timer switch".
+void redLightLoop() { //loop for middle blink when it is red
+  if (roundOver == true && isGreenLight == false) { //roundOver checks if the light has changed
     lightTimer.set(RED_INTERVAL_MIN + random(RED_INTERVAL_MAX));
     roundOver = false;
   }
   setColor(RED);
-  if (lightTimer.isExpired()) {
+  if (lightTimer.isExpired()) { //when red light timer is over, change to green light
     roundOver = true;
     isGreenLight = true;
     mode = GREENLIGHT;
   }
 }
 
-void greenLightLoop() {
+void greenLightLoop() { //loop for middle blink when it is green
   if (roundOver == true && isGreenLight == true) {
-    lightTimer.set(GREEN_INTERVAL_MIN + random(GREEN_INTERVAL_MAX));
+    lightTimer.set(GREEN_INTERVAL_MIN + random(GREEN_INTERVAL_MAX)); //set random timer for green light
     roundOver = false;
   }
   setColor(GREEN);
-  if (lightTimer.getRemaining() > 0 && lightTimer.getRemaining() < 300) {
+  if (lightTimer.getRemaining() > 0 && lightTimer.getRemaining() < 301) { //in the last .3 seconds, ripple to send a visual warning
     ripplingTimer.set(RIPPLING_INTERVAL);
   }
-
-  if (ripplingTimer.isExpired()) {
-
-  }
-  else {
+  if (!ripplingTimer.isExpired()) {
     FOREACH_FACE(f) {
-      setColorOnFace(makeColorHSB(70, 255, random(50) + 205), f); //GREEN HUE
+      setColorOnFace(makeColorHSB(70, 255, random(50) + 205), f); //70 is GREEN HUE, ripple while the timer is not expired
     }
   }
-
-
-  if (lightTimer.isExpired()) {
+  if (lightTimer.isExpired()) { //when green light timer expires, change to red right
     roundOver = true;
     isGreenLight = false;
     mode = REDLIGHT;
   }
 }
 
-void losePointsLoop() {
+void losePointsLoop() { //player piece (outer ring) loop when the middle blink/light is red
+
+//checks for all sorts of button clicks to reset the player score is any of them are performed
 
   if (buttonSingleClicked())
   {
@@ -182,67 +185,60 @@ void losePointsLoop() {
     teamScores[teamIndex] = 0;
   }
 
-  if(buttonReleased()){
-       teamScores[teamIndex] = 0;
-    }
+  if (buttonReleased()) {
+    teamScores[teamIndex] = 0;
+  }
 
   if (teamScores[teamIndex] < 0) { //if value drops below 0 just round it to 0, just in case
     teamScores[teamIndex] = 0;
   }
 
- 
-
-
-
   FOREACH_FACE( f ) {
     if ( !isValueReceivedOnFaceExpired( f ) ) {
-      byte neighbor = getLastValueReceivedOnFace( f );
-      bool didNeighborJustChange = didValueOnFaceChange( f );
-      if (neighbor == GREENLIGHT && didNeighborJustChange) { //if there is a green light neighbor
-        mode = GAIN_POINTS; //change mode
+      byte neighbor = getLastValueReceivedOnFace( f ); //a neighbor!
+      bool didNeighborJustChange = didValueOnFaceChange( f ); //did the neighbor value recently change?
+      if (neighbor == GREENLIGHT && didNeighborJustChange) { //if there is a green light neighbor and it recently changed
+        mode = GAIN_POINTS; //change self to gain points mode
       }
     }
   }
 
-  scoreDisplay();
-
+  scoreDisplay(); //display score blips on player blink
+  listenForWinner(); // listen for a winning blink
 }
 
 
 
-void gainPointsLoop() {
-  
+void gainPointsLoop() { //player piece loop for when middle blink/light is green
+
   FOREACH_FACE( f ) {
     if ( !isValueReceivedOnFaceExpired( f ) ) {
-      byte neighbor = getLastValueReceivedOnFace( f );
-      bool didNeighborJustChange = didValueOnFaceChange( f );
-      if (neighbor == REDLIGHT && didNeighborJustChange) { //if there is a red light neighbor
-        mode = LOSE_POINTS; //change mode
+      byte neighbor = getLastValueReceivedOnFace( f ); //a neighbor!
+      bool didNeighborJustChange = didValueOnFaceChange( f ); //did neighbor recently change?
+      if (neighbor == REDLIGHT && didNeighborJustChange) { //if there is a red light neighbor and it recently changed
+        mode = LOSE_POINTS; //change self to lose points mode
       }
     }
   }
 
 
-  if(buttonReleased()){
-       teamScores[teamIndex] += 1;
-    }
-      
+  if (buttonReleased()) { //add score on spam click or click
+    teamScores[teamIndex] += 1;
+  }
 
-
-
-  scoreDisplay();
-
+  scoreDisplay(); //display score
+  listenForWinner();  //listen for a winning blink
 }
 
 
 void scoreDisplay() {
 
-  if (teamScores[teamIndex] > 10) {
+  if (teamScores[teamIndex] > 10) { //if greater than 10, light up face 0
     setColorOnFace(WHITE, 0);
   }
 
   else {
-    setColorOnFace(getColorForTeam(teamIndex), 0);
+    setColorOnFace(getColorForTeam(teamIndex), 0); //else, set face to off
   }
   if (teamScores[teamIndex] > 20) {
     setColorOnFace(WHITE, 1);
@@ -271,35 +267,38 @@ void scoreDisplay() {
   else {
     setColorOnFace(getColorForTeam(teamIndex), 4);
   }
-  if (teamScores[teamIndex] > 60) {
+  if (teamScores[teamIndex] == 60) {
     setColorOnFace(WHITE, 5);
+    //whoever gets to 60 wins!
+    mode = WINNER;
+    
   }
-  else {
+  else if (teamScores[teamIndex] < 60) { //light up face, but player hasn't won yet
     setColorOnFace(getColorForTeam(teamIndex), 5);
   }
 
 }
 
+void winnerLoop() {
+    byte rotationFace = (millis() / ROTATION_MS_PER_STEP) % FACE_COUNT; // winning animation, rotating face
+    setColor(getColorForTeam(teamIndex)); //set background to team colour
+    setColorOnFace( WHITE , rotationFace ); //set the rotating face colour
+}
 
-/*Notes*/
+void loserLoop() { //dim then turn off all other blinks
+    setColor(dim(getColorForTeam(teamIndex), 20));
+}
 
-
-
-//case: GAIN_POINTS: , checks neighbors for GREENLIGHT, counts a multi-click and adds to score
-//also checks neighbors for REDLIGHT, and changes to LOSE_POINTS if it finds one
-
-//case: LOSE_POINTS: checks neighbors for REDLIGHT, checks for clicks and will either half score or delete score
-//also checks neighbors for GREENLIGHT, and changes to GAIN_POINTS if it finds one
-
-//case: WINNER: checks all scores of blinks, finds highest, and will show winning animation
-
-
-
-
-
-//count multi-click, use later
-//byte clicks;
-//if (buttonMultiClicked())
-//{
-//  clicks = buttonClickCount();
-//}
+void listenForWinner() { //outer blinks will listen for a winning blink throughout the game
+  FOREACH_FACE( f ) {
+    if ( !isValueReceivedOnFaceExpired( f ) ) {
+      byte neighbor = getLastValueReceivedOnFace( f ); //found neighbor!
+      if (neighbor == WINNER) { //if there is a winner neighbor
+        mode = LOSER; //change self to loser
+      }
+      if (neighbor == LOSER) { //if there is a loser neighbor
+        mode = LOSER; //change self to loser
+      }
+    }
+  }
+}
